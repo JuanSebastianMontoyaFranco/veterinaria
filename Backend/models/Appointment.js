@@ -13,6 +13,10 @@ const Appointment = sequelize.define('Appointment', {
     notes: {
         type: DataTypes.TEXT,
         allowNull: true
+    },
+    PetId: {
+        type: DataTypes.INTEGER,
+        allowNull: true
     }
 });
 

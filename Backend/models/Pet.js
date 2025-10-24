@@ -34,6 +34,10 @@ const Pet = sequelize.define('Pet', {
     diseases: {
         type: DataTypes.STRING,
         allowNull: true
+    },
+    OwnerId: {
+        type: DataTypes.INTEGER,
+        allowNull: true
     }
 });
 

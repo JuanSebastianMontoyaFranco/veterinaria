@@ -13,6 +13,10 @@ const Owner = sequelize.define('Owner', {
     address: {
         type: DataTypes.STRING,
         allowNull: true
+    },
+    UserId: {
+        type: DataTypes.INTEGER,
+        allowNull: false
     }
 });
 

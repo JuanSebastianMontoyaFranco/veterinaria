@@ -1,40 +1,70 @@
 const jwt = require('jsonwebtoken');
+const { Op } = require('sequelize');
+const logger = require('../config/logger');
 const { User, Role } = require('../models');
 
-exports.register = async (req, res) => {
-    try {
-        const { name, email, password, roles } = req.body;
-        const newUser = await User.create({ name, email, password });
+exports.register = async (req, res, next) => {
+  try {
+    const { name, email, password, roles } = req.body;
+    logger.info('User registration requested', { email, roles });
 
-        if (roles) {
-            const foundRoles = await Role.findAll({ where: { name: roles } });
-            await newUser.setRoles(foundRoles);
-        } else {
-            const defaultRole = await Role.findOne({ where: { name: 'user' } });
-            await newUser.setRoles([defaultRole]);
+    const newUser = await User.create({ name, email, password });
+
+    const roleNames = Array.isArray(roles)
+      ? roles
+      : roles
+        ? [roles]
+        : ['user'];
+
+    const uniqueRoleNames = [...new Set(roleNames.map((roleName) => roleName.toLowerCase()))];
+
+    const foundRoles = await Role.findAll({
+      where: {
+        name: {
+          [Op.in]: uniqueRoleNames
         }
+      }
+    });
 
-        res.status(201).json({ message: 'User registered successfully' });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+    if (!foundRoles.length) {
+      const fallbackRole = await Role.findOne({ where: { name: 'user' } });
+      if (!fallbackRole) {
+        logger.error('Default role "user" not found during registration', { email });
+        return res.status(500).json({ message: 'No se encontro el rol por defecto del sistema' });
+      }
+      await newUser.setRoles([fallbackRole]);
+    } else {
+      await newUser.setRoles(foundRoles);
     }
+
+    logger.info('User registered successfully', { userId: newUser.id, email: newUser.email });
+    res.status(201).json({ message: 'Usuario creado correctamente' });
+  } catch (error) {
+    logger.error('User registration failed', { email: req.body.email, error: error.message });
+    next(error);
+  }
 };
 
-exports.login = async (req, res) => {
-    try {
-        const { email, password } = req.body;
-        const user = await User.findOne({ where: { email } });
+exports.login = async (req, res, next) => {
+  try {
+    const { email, password } = req.body;
+    logger.info('Login attempt received', { email });
 
-        if (!user || !(await user.validPassword(password))) {
-            return res.status(401).json({ message: 'Invalid credentials' });
-        }
+    const user = await User.scope('withPassword').findOne({ where: { email } });
 
-        const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
-            expiresIn: '1h'
-        });
-
-        res.json({ token });
-    } catch (error) {
-        res.status(500).json({ message: error.message });
+    if (!user || !(await user.validPassword(password))) {
+      logger.warn('Login failed due to invalid credentials', { email });
+      return res.status(401).json({ message: 'Las credenciales son incorrectas' });
     }
+
+    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, {
+      expiresIn: '1h'
+    });
+
+    logger.info('User login successful', { userId: user.id, email: user.email });
+    res.json({ token });
+  } catch (error) {
+    logger.error('Login process failed', { email: req.body.email, error: error.message });
+    next(error);
+  }
 };
